@@ -8,7 +8,7 @@ const cors = require('cors');
 
 dotenv.config();
 
-const serviceAccount = require('./firebase-key.json');
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
 initializeApp({
   credential: cert(serviceAccount),
