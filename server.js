@@ -11,7 +11,8 @@ dotenv.config();
 const serviceAccount = require('./firebase-key.json');
 
 initializeApp({
-  credential: cert(serviceAccount)
+  credential: cert(serviceAccount),
+  projectId: 'anonymousme-90e67'
 });
 
 const db = getFirestore();
