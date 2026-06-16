@@ -9,11 +9,27 @@ const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+const deviceAlertCount = {};
 
-app.post('/api/alert', async (req, res) => {
+const rateLimit = (req, res, next) => {
+  const deviceId = req.body.deviceId || req.ip;
+  const now = Date.now();
+  
+  if (!deviceAlertCount[deviceId]) {
+    deviceAlertCount[deviceId] = [];
+  }
+  
+  deviceAlertCount[deviceId] = deviceAlertCount[deviceId].filter(time => now - time < 3600000);
+  
+  if (deviceAlertCount[deviceId].length >= 3) {
+    return res.status(429).json({ error: 'Too many alerts. Please wait before sending another.' });
+  }
+  
+  deviceAlertCount[deviceId].push(now);
+  next();
+};
+
+app.post('/api/alert', rateLimit, async (req, res) => {
   try {
     const { type, message, zone, state } = req.body;
 
