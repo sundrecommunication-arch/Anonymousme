@@ -1,14 +1,12 @@
+const dotenv = require('dotenv');
+dotenv.config();
+
+console.log('Google creds path:', process.env.GOOGLE_APPLICATION_CREDENTIALS);
+
 const express = require('express');
 const admin = require('firebase-admin');
 const twilio = require('twilio');
-const dotenv = require('dotenv');
 const cors = require('cors');
-
-dotenv.config();
-
-const app = express();
-app.use(cors());
-app.use(express.json());
 
 const serviceAccount = require('./firebase-key.json');
 
@@ -19,6 +17,10 @@ admin.initializeApp({
 const db = admin.firestore();
 const messaging = admin.messaging();
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
+const app = express();
+app.use(cors());
+app.use(express.json());
 
 app.post('/api/alert', async (req, res) => {
   try {
@@ -43,7 +45,10 @@ app.post('/api/alert', async (req, res) => {
     const targets = responderTypes[type] || [];
 
     for (const target of targets) {
-      const responders = await db.collection('responders').where('type', '==', target).where('zone', '==', zone).get();
+      const responders = await db.collection('responders')
+        .where('type', '==', target)
+        .where('zone', '==', zone)
+        .get();
 
       responders.forEach(async (doc) => {
         const responder = doc.data();
@@ -82,7 +87,11 @@ app.post('/api/alert', async (req, res) => {
 app.get('/api/alerts/:zone', async (req, res) => {
   try {
     const { zone } = req.params;
-    const snapshot = await db.collection('alerts').where('zone', '==', zone).orderBy('timestamp', 'desc').limit(50).get();
+    const snapshot = await db.collection('alerts')
+      .where('zone', '==', zone)
+      .orderBy('timestamp', 'desc')
+      .limit(50)
+      .get();
 
     const alerts = [];
     snapshot.forEach(doc => {
