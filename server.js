@@ -19,30 +19,85 @@ app.post('/api/alert', async (req, res) => {
 
     const { data, error } = await supabase
       .from('alerts')
-      .insert([{ type, message, zone, state, status: 'new' }])
+      .insert([{ 
+        type, 
+        message, 
+        zone, 
+        state, 
+        status: 'new',
+        confirmations: 0,
+        confirmed: false,
+        dispatched: false
+      }])
       .select();
 
     if (error) throw error;
 
-    const { data: responders } = await supabase
-      .from('responders')
-      .select('*')
-      .eq('zone', state);
+    res.json({ 
+      success: true, 
+      alertId: data[0].id,
+      message: 'Alert received. Waiting for confirmation from others in your area before dispatching to responders.'
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
-    if (responders && responders.length > 0) {
-      responders.forEach(responder => {
-        if (responder.phone) {
-          twilioClient.messages.create({
-            body: `AnonymousMe ALERT (${type.toUpperCase()}): ${message || 'Anonymous alert received'} - Zone: ${zone}, State: ${state}. Please respond immediately.`,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: responder.phone
-          }).then(() => console.log('SMS sent to', responder.phone))
-            .catch(err => console.log('SMS failed:', err.message));
-        }
-      });
+app.post('/api/alert/confirm', async (req, res) => {
+  try {
+    const { alertId } = req.body;
+
+    const { data: alert } = await supabase
+      .from('alerts')
+      .select('*')
+      .eq('id', alertId)
+      .single();
+
+    if (!alert) {
+      return res.status(404).json({ error: 'Alert not found' });
     }
 
-    res.json({ success: true, alertId: data[0].id });
+    const newConfirmations = (alert.confirmations || 0) + 1;
+    const isConfirmed = newConfirmations >= 2;
+
+    const { error } = await supabase
+      .from('alerts')
+      .update({
+        confirmations: newConfirmations,
+        confirmed: isConfirmed,
+        dispatched: isConfirmed
+      })
+      .eq('id', alertId);
+
+    if (error) throw error;
+
+    if (isConfirmed && !alert.dispatched) {
+      const { data: responders } = await supabase
+        .from('responders')
+        .select('*')
+        .eq('zone', alert.state);
+
+      if (responders && responders.length > 0) {
+        responders.forEach(responder => {
+          if (responder.phone) {
+            twilioClient.messages.create({
+              body: `CONFIRMED AnonymousMe ALERT (${alert.type.toUpperCase()}): ${alert.message || 'Alert confirmed by multiple users'} - Zone: ${alert.zone}, State: ${alert.state}. Please respond immediately.`,
+              from: process.env.TWILIO_PHONE_NUMBER,
+              to: responder.phone
+            }).then(() => console.log('SMS sent to', responder.phone))
+              .catch(err => console.log('SMS failed:', err.message));
+          }
+        });
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      confirmations: newConfirmations,
+      confirmed: isConfirmed,
+      message: isConfirmed ? 'Alert confirmed and responders notified' : `Alert needs ${2 - newConfirmations} more confirmation(s)`
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
@@ -58,6 +113,27 @@ app.get('/api/alerts/:zone', async (req, res) => {
       .select('*')
       .or(`zone.eq.${zone},state.eq.${zone}`)
       .eq('status', 'new')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/alerts/unconfirmed/:zone', async (req, res) => {
+  try {
+    const { zone } = req.params;
+
+    const { data, error } = await supabase
+      .from('alerts')
+      .select('*')
+      .or(`zone.eq.${zone},state.eq.${zone}`)
+      .eq('status', 'new')
+      .eq('confirmed', false)
       .order('created_at', { ascending: false })
       .limit(50);
 
@@ -92,6 +168,23 @@ app.post('/api/alert/resolve', async (req, res) => {
     const { error } = await supabase
       .from('alerts')
       .update({ status: 'resolved' })
+      .eq('id', alertId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/alert/false', async (req, res) => {
+  try {
+    const { alertId } = req.body;
+
+    const { error } = await supabase
+      .from('alerts')
+      .update({ status: 'false_alert' })
       .eq('id', alertId);
 
     if (error) throw error;
