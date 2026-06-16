@@ -25,23 +25,29 @@ app.post('/api/alert', async (req, res) => {
     if (error) throw error;
 
     const { data: responders } = await supabase
-  .from('responders')
-  .select('*')
-  .eq('type', type)
-  .eq('zone', zone);
+      .from('responders')
+      .select('*')
+      .eq('zone', state);
 
-if (responders && responders.length > 0) {
-  responders.forEach(responder => {
-    if (responder.phone) {
-      twilioClient.messages.create({
-        body: `AnonymousMe ALERT (${type.toUpperCase()}): ${message || 'Anonymous alert received'} - Zone: ${zone}, State: ${state}. Please respond immediately.`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: responder.phone
-      }).then(() => console.log('SMS sent to', responder.phone))
-        .catch(err => console.log('SMS failed:', err.message));
+    if (responders && responders.length > 0) {
+      responders.forEach(responder => {
+        if (responder.phone) {
+          twilioClient.messages.create({
+            body: `AnonymousMe ALERT (${type.toUpperCase()}): ${message || 'Anonymous alert received'} - Zone: ${zone}, State: ${state}. Please respond immediately.`,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: responder.phone
+          }).then(() => console.log('SMS sent to', responder.phone))
+            .catch(err => console.log('SMS failed:', err.message));
+        }
+      });
     }
-  });
-}
+
+    res.json({ success: true, alertId: data[0].id });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 app.get('/api/alerts/:zone', async (req, res) => {
   try {
@@ -89,22 +95,6 @@ app.post('/api/alert/resolve', async (req, res) => {
       .eq('id', alertId);
 
     if (error) throw error;
-
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/sms', async (req, res) => {
-  try {
-    const { phone, message } = req.body;
-
-    await twilioClient.messages.create({
-      body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      to: phone
-    });
 
     res.json({ success: true });
   } catch (error) {
