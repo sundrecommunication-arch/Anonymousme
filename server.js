@@ -24,7 +24,23 @@ app.post('/api/alert', async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ success: true, alertId: data[0].id });
+    const { data: responders } = await supabase
+  .from('responders')
+  .select('*')
+  .eq('type', type)
+  .eq('zone', zone);
+
+if (responders && responders.length > 0) {
+  for (const responder of responders) {
+    if (responder.phone) {
+      await twilioClient.messages.create({
+        body: `AnonymousMe ALERT (${type.toUpperCase()}): ${message || 'Anonymous alert received'} - Zone: ${zone}, State: ${state}. Please respond immediately.`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: responder.phone
+      });
+    }
+  }
+}
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
