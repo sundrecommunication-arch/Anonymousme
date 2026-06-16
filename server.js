@@ -31,21 +31,17 @@ app.post('/api/alert', async (req, res) => {
   .eq('zone', zone);
 
 if (responders && responders.length > 0) {
-  for (const responder of responders) {
+  responders.forEach(responder => {
     if (responder.phone) {
-      await twilioClient.messages.create({
+      twilioClient.messages.create({
         body: `AnonymousMe ALERT (${type.toUpperCase()}): ${message || 'Anonymous alert received'} - Zone: ${zone}, State: ${state}. Please respond immediately.`,
         from: process.env.TWILIO_PHONE_NUMBER,
         to: responder.phone
-      });
+      }).then(() => console.log('SMS sent to', responder.phone))
+        .catch(err => console.log('SMS failed:', err.message));
     }
-  }
+  });
 }
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 app.get('/api/alerts/:zone', async (req, res) => {
   try {
