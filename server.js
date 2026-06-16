@@ -9,37 +9,41 @@ const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
+const app = express();
+app.use(cors());
+app.use(express.json());
+
 const deviceAlertCount = {};
 
 const rateLimit = (req, res, next) => {
   const deviceId = req.body.deviceId || req.ip;
   const now = Date.now();
-  
+
   if (!deviceAlertCount[deviceId]) {
     deviceAlertCount[deviceId] = [];
   }
-  
+
   deviceAlertCount[deviceId] = deviceAlertCount[deviceId].filter(time => now - time < 3600000);
-  
+
   if (deviceAlertCount[deviceId].length >= 3) {
     return res.status(429).json({ error: 'Too many alerts. Please wait before sending another.' });
   }
-  
+
   deviceAlertCount[deviceId].push(now);
   next();
 };
 
 app.post('/api/alert', rateLimit, async (req, res) => {
   try {
-    const { type, message, zone, state } = req.body;
+    const { type, message, zone, state, deviceId } = req.body;
 
     const { data, error } = await supabase
       .from('alerts')
-      .insert([{ 
-        type, 
-        message, 
-        zone, 
-        state, 
+      .insert([{
+        type,
+        message,
+        zone,
+        state,
         status: 'new',
         confirmations: 0,
         confirmed: false,
@@ -49,8 +53,8 @@ app.post('/api/alert', rateLimit, async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       alertId: data[0].id,
       message: 'Alert received. Waiting for confirmation from others in your area before dispatching to responders.'
     });
@@ -108,8 +112,8 @@ app.post('/api/alert/confirm', async (req, res) => {
       }
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       confirmations: newConfirmations,
       confirmed: isConfirmed,
       message: isConfirmed ? 'Alert confirmed and responders notified' : `Alert needs ${2 - newConfirmations} more confirmation(s)`
@@ -129,27 +133,6 @@ app.get('/api/alerts/:zone', async (req, res) => {
       .select('*')
       .or(`zone.eq.${zone},state.eq.${zone}`)
       .eq('status', 'new')
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (error) throw error;
-
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get('/api/alerts/unconfirmed/:zone', async (req, res) => {
-  try {
-    const { zone } = req.params;
-
-    const { data, error } = await supabase
-      .from('alerts')
-      .select('*')
-      .or(`zone.eq.${zone},state.eq.${zone}`)
-      .eq('status', 'new')
-      .eq('confirmed', false)
       .order('created_at', { ascending: false })
       .limit(50);
 
