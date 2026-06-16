@@ -1,24 +1,12 @@
 const dotenv = require('dotenv');
 dotenv.config();
 
-console.log('Google creds path:', process.env.GOOGLE_APPLICATION_CREDENTIALS);
-
 const express = require('express');
-const admin = require('firebase-admin');
-const twilio = require('twilio');
 const cors = require('cors');
+const twilio = require('twilio');
+const { createClient } = require('@supabase/supabase-js');
 
-admin.initializeApp({
-  credential: admin.credential.cert({
-    type: 'service_account',
-    project_id: process.env.FIREBASE_PROJECT_ID,
-    private_key: process.env.FIREBASE_PRIVATE_KEY.includes('\\n') ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : process.env.FIREBASE_PRIVATE_KEY,
-    client_email: process.env.FIREBASE_CLIENT_EMAIL,
-  })
-});
-
-const db = admin.firestore();
-const messaging = admin.messaging();
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const app = express();
@@ -29,58 +17,14 @@ app.post('/api/alert', async (req, res) => {
   try {
     const { type, message, zone, state } = req.body;
 
-    const alertDoc = await db.collection('alerts').add({
-      type: type,
-      message: message,
-      zone: zone,
-      state: state,
-      timestamp: new Date(),
-      status: 'new'
-    });
+    const { data, error } = await supabase
+      .from('alerts')
+      .insert([{ type, message, zone, state, status: 'new' }])
+      .select();
 
-    const responderTypes = {
-      medical: ['hospital', 'ambulance'],
-      security: ['police', 'civil-defence'],
-      fire: ['fire-service', 'lasema'],
-      community: ['volunteer']
-    };
+    if (error) throw error;
 
-    const targets = responderTypes[type] || [];
-
-    for (const target of targets) {
-      const responders = await db.collection('responders')
-        .where('type', '==', target)
-        .where('zone', '==', zone)
-        .get();
-
-      responders.forEach(async (doc) => {
-        const responder = doc.data();
-
-        if (responder.fcmToken) {
-          await messaging.send({
-            notification: {
-              title: `New ${type.toUpperCase()} alert in ${zone}`,
-              body: message || 'Anonymous alert received'
-            },
-            data: {
-              alertId: alertDoc.id,
-              zone: zone
-            },
-            token: responder.fcmToken
-          });
-        }
-
-        if (responder.phone) {
-          await twilioClient.messages.create({
-            body: `AnonymousMe alert (${type}): ${message || 'Alert received'} - Zone: ${zone}`,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: responder.phone
-          });
-        }
-      });
-    }
-
-    res.json({ success: true, alertId: alertDoc.id });
+    res.json({ success: true, alertId: data[0].id });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
@@ -90,18 +34,18 @@ app.post('/api/alert', async (req, res) => {
 app.get('/api/alerts/:zone', async (req, res) => {
   try {
     const { zone } = req.params;
-    const snapshot = await db.collection('alerts')
-      .where('zone', '==', zone)
-      .orderBy('timestamp', 'desc')
-      .limit(50)
-      .get();
 
-    const alerts = [];
-    snapshot.forEach(doc => {
-      alerts.push({ id: doc.id, ...doc.data() });
-    });
+    const { data, error } = await supabase
+      .from('alerts')
+      .select('*')
+      .eq('zone', zone)
+      .eq('status', 'new')
+      .order('created_at', { ascending: false })
+      .limit(50);
 
-    res.json(alerts);
+    if (error) throw error;
+
+    res.json(data);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -111,14 +55,11 @@ app.post('/api/responder/register', async (req, res) => {
   try {
     const { name, type, zone, phone, fcmToken } = req.body;
 
-    await db.collection('responders').add({
-      name: name,
-      type: type,
-      zone: zone,
-      phone: phone,
-      fcmToken: fcmToken,
-      timestamp: new Date()
-    });
+    const { error } = await supabase
+      .from('responders')
+      .insert([{ name, type, zone, phone, fcm_token: fcmToken }]);
+
+    if (error) throw error;
 
     res.json({ success: true });
   } catch (error) {
@@ -130,9 +71,27 @@ app.post('/api/alert/resolve', async (req, res) => {
   try {
     const { alertId } = req.body;
 
-    await db.collection('alerts').doc(alertId).update({
-      status: 'resolved',
-      resolvedAt: new Date()
+    const { error } = await supabase
+      .from('alerts')
+      .update({ status: 'resolved' })
+      .eq('id', alertId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/sms', async (req, res) => {
+  try {
+    const { phone, message } = req.body;
+
+    await twilioClient.messages.create({
+      body: message,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      to: phone
     });
 
     res.json({ success: true });
