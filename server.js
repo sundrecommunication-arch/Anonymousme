@@ -47,7 +47,8 @@ app.post('/api/alert', rateLimit, async (req, res) => {
         status: 'new',
         confirmations: 0,
         confirmed: false,
-        dispatched: false
+        dispatched: false,
+        evidence_url: req.body.evidenceUrl || null
       }])
       .select();
 
