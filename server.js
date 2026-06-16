@@ -56,7 +56,7 @@ app.get('/api/alerts/:zone', async (req, res) => {
     const { data, error } = await supabase
       .from('alerts')
       .select('*')
-      .eq('zone', zone)
+      .or(`zone.eq.${zone},state.eq.${zone}`)
       .eq('status', 'new')
       .order('created_at', { ascending: false })
       .limit(50);
