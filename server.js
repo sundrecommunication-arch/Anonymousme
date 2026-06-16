@@ -1,27 +1,23 @@
-const { initializeApp, cert } = require('firebase-admin/app');
-const { getFirestore } = require('firebase-admin/firestore');
-const { getMessaging } = require('firebase-admin/messaging');
 const express = require('express');
+const admin = require('firebase-admin');
 const twilio = require('twilio');
 const dotenv = require('dotenv');
 const cors = require('cors');
 
 dotenv.config();
 
-const serviceAccount = require('./firebase-key.json');
-
-initializeApp({
-  credential: cert(serviceAccount),
-  projectId: 'anonymousme-90e67'
-});
-
-const db = getFirestore();
-const messaging = getMessaging();
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
+const serviceAccount = require('./firebase-key.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+const db = admin.firestore();
+const messaging = admin.messaging();
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 app.post('/api/alert', async (req, res) => {
