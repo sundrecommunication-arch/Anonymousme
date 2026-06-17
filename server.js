@@ -203,6 +203,61 @@ app.post('/api/alert/false', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+app.post('/api/alert/false', async (req, res) => {
+  try {
+    const { alertId } = req.body;
+
+    const { error } = await supabase
+      .from('alerts')
+      .update({ status: 'false_alert' })
+      .eq('id', alertId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/alert/backup', async (req, res) => {
+  try {
+    const { alertId, responderName, responderType, zone } = req.body;
+
+    const { data: alert } = await supabase
+      .from('alerts')
+      .select('*')
+      .eq('id', alertId)
+      .single();
+
+    if (!alert) {
+      return res.status(404).json({ error: 'Alert not found' });
+    }
+
+    const { data: responders } = await supabase
+      .from('responders')
+      .select('*')
+      .eq('zone', alert.state);
+
+    if (responders && responders.length > 0) {
+      responders.forEach(responder => {
+        if (responder.phone) {
+          twilioClient.messages.create({
+            body: `BACKUP NEEDED — AnonymousMe Alert (${alert.type.toUpperCase()}): ${alert.message || 'Backup requested'} - Zone: ${alert.zone}, State: ${alert.state}. Requested by: ${responderName} (${responderType}). Please respond immediately.`,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: responder.phone
+          }).then(() => console.log('Backup SMS sent to', responder.phone))
+            .catch(err => console.log('Backup SMS failed:', err.message));
+        }
+      });
+    }
+
+    res.json({ success: true, notified: responders ? responders.length : 0 });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
