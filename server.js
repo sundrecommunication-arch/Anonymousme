@@ -21,6 +21,14 @@ app.use(cors({
 }));
 app.use(express.json());
 
+const authenticateApiKey = (req, res, next) => {
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey || apiKey !== process.env.API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized. Invalid API key.' });
+  }
+  next();
+};
+
 const deviceAlertCount = {};
 
 const rateLimit = (req, res, next) => {
@@ -41,7 +49,7 @@ const rateLimit = (req, res, next) => {
   next();
 };
 
-app.post('/api/alert', rateLimit, async (req, res) => {
+app.post('/api/alert', authenticateApiKey, rateLimit, async (req, res) => {
   try {
     const { type, message, zone, state, deviceId } = req.body;
 
@@ -74,7 +82,7 @@ app.post('/api/alert', rateLimit, async (req, res) => {
   }
 });
 
-app.post('/api/alert/confirm', async (req, res) => {
+app.post('/api/alert/confirm', authenticateApiKey, async (req, res) => {
   try {
     const { alertId } = req.body;
 
@@ -134,7 +142,7 @@ app.post('/api/alert/confirm', async (req, res) => {
   }
 });
 
-app.get('/api/alerts/:zone', async (req, res) => {
+app.get('/api/alerts/:zone', authenticateApiKey, async (req, res) => {
   try {
     const { zone } = req.params;
 
@@ -154,7 +162,7 @@ app.get('/api/alerts/:zone', async (req, res) => {
   }
 });
 
-app.post('/api/responder/register', async (req, res) => {
+app.post('/api/responder/register', authenticateApiKey, async (req, res) => {
   try {
     const { name, type, zone, phone, fcmToken, serviceNumber } = req.body;
 
@@ -178,7 +186,7 @@ app.post('/api/responder/register', async (req, res) => {
   }
 });
 
-app.post('/api/alert/resolve', async (req, res) => {
+app.post('/api/alert/resolve', authenticateApiKey, async (req, res) => {
   try {
     const { alertId } = req.body;
 
@@ -195,7 +203,7 @@ app.post('/api/alert/resolve', async (req, res) => {
   }
 });
 
-app.post('/api/alert/false', async (req, res) => {
+app.post('/api/alert/false', authenticateApiKey, async (req, res) => {
   try {
     const { alertId } = req.body;
 
@@ -228,7 +236,7 @@ app.post('/api/alert/false', async (req, res) => {
   }
 });
 
-app.post('/api/alert/backup', async (req, res) => {
+app.post('/api/alert/backup', authenticateApiKey, async (req, res) => {
   try {
     const { alertId, responderName, responderType, zone } = req.body;
 
