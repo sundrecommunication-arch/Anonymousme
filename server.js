@@ -44,6 +44,7 @@ app.post('/api/alert', rateLimit, async (req, res) => {
         message,
         zone,
         state,
+        lga: req.body.lga || null,
         status: 'new',
         confirmations: 0,
         confirmed: false,
