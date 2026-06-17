@@ -25,7 +25,7 @@ const rateLimit = (req, res, next) => {
 
   deviceAlertCount[deviceId] = deviceAlertCount[deviceId].filter(time => now - time < 3600000);
 
-  if (deviceAlertCount[deviceId].length >= 3) {
+  iif (deviceAlertCount[deviceId].length >= 20) {
     return res.status(429).json({ error: 'Too many alerts. Please wait before sending another.' });
   }
 
