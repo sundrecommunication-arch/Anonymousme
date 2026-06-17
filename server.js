@@ -148,11 +148,19 @@ app.get('/api/alerts/:zone', async (req, res) => {
 
 app.post('/api/responder/register', async (req, res) => {
   try {
-    const { name, type, zone, phone, fcmToken } = req.body;
+    const { name, type, zone, phone, fcmToken, serviceNumber } = req.body;
 
     const { error } = await supabase
       .from('responders')
-      .insert([{ name, type, zone, phone, fcm_token: fcmToken }]);
+      .insert([{ 
+        name, 
+        type, 
+        zone, 
+        phone, 
+        fcm_token: fcmToken,
+        service_number: serviceNumber,
+        verified: serviceNumber ? true : false
+      }]);
 
     if (error) throw error;
 
