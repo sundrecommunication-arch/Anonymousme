@@ -10,7 +10,15 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://anonymousme-frontend.vercel.app',
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+  credentials: true
+}));
 app.use(express.json());
 
 const deviceAlertCount = {};
