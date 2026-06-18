@@ -6,7 +6,10 @@ const cors = require('cors');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
 const jwt = require('jsonwebtoken');
-
+const sanitize = (str) => {
+  if (!str) return str;
+  return str.replace(/[<>'"`;]/g, '').trim();
+};
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -71,7 +74,11 @@ const rateLimit = (req, res, next) => {
 
 app.post('/api/alert', authenticateApiKey, rateLimit, async (req, res) => {
   try {
-    const { type, message, zone, state, lga } = req.body;
+    const type = sanitize(req.body.type);
+const message = sanitize(req.body.message);
+const zone = sanitize(req.body.zone);
+const state = sanitize(req.body.state);
+const lga = sanitize(req.body.lga);
 
     const { data, error } = await supabase
       .from('alerts')
@@ -214,7 +221,11 @@ app.post('/api/responder/register', authenticateApiKey, async (req, res) => {
 
 app.post('/api/responder/login', authenticateApiKey, async (req, res) => {
   try {
-    const { name, type, zone, phone, serviceNumber } = req.body;
+    const name = sanitize(req.body.name);
+const type = sanitize(req.body.type);
+const zone = sanitize(req.body.zone);
+const phone = sanitize(req.body.phone);
+const serviceNumber = sanitize(req.body.serviceNumber);
 
     if (!serviceNumber) {
       return res.status(400).json({ error: 'Service number is required' });
