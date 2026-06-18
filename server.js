@@ -5,9 +5,24 @@ const express = require('express');
 const cors = require('cors');
 const twilio = require('twilio');
 const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
+const app = express();
+
+app.use(cors({
+  origin: [
+    'https://anonymousme-frontend.vercel.app',
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+  credentials: true
+}));
+
+app.use(express.json());
 
 const logCustody = async (alertId, action, performedBy, responderType, serviceNumber, state, lga, notes) => {
   try {
@@ -26,18 +41,6 @@ const logCustody = async (alertId, action, performedBy, responderType, serviceNu
   }
 };
 
-const app = express();
-app.use(cors({
-  origin: [
-    'https://anonymousme-frontend.vercel.app',
-    'http://localhost:3000'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
-  credentials: true
-}));
-app.use(express.json());
-
 const authenticateApiKey = (req, res, next) => {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey || apiKey !== process.env.API_KEY) {
@@ -49,7 +52,6 @@ const authenticateApiKey = (req, res, next) => {
 const deviceAlertCount = {};
 
 const rateLimit = (req, res, next) => {
-  
   const deviceId = req.body.deviceId || req.ip;
   const now = Date.now();
 
@@ -69,7 +71,7 @@ const rateLimit = (req, res, next) => {
 
 app.post('/api/alert', authenticateApiKey, rateLimit, async (req, res) => {
   try {
-    const { type, message, zone, state, deviceId } = req.body;
+    const { type, message, zone, state, lga } = req.body;
 
     const { data, error } = await supabase
       .from('alerts')
@@ -83,13 +85,16 @@ app.post('/api/alert', authenticateApiKey, rateLimit, async (req, res) => {
         confirmations: 0,
         confirmed: false,
         dispatched: false,
-        evidence_url: req.body.evidenceUrl || null
+        evidence_url: req.body.evidenceUrl || null,
+        locked: true,
+        created_by_device: req.body.deviceId || null
       }])
       .select();
 
     if (error) throw error;
 
-await logCustody(data[0].id, 'ALERT_CREATED', 'Anonymous Citizen', 'citizen', null, state, req.body.lga, 'Alert submitted by anonymous citizen');
+    await logCustody(data[0].id, 'ALERT_CREATED', 'Anonymous Citizen', 'citizen', null, state, lga, 'Alert submitted by anonymous citizen');
+
     res.json({
       success: true,
       alertId: data[0].id,
@@ -129,6 +134,8 @@ app.post('/api/alert/confirm', authenticateApiKey, async (req, res) => {
 
     if (error) throw error;
 
+    await logCustody(alertId, isConfirmed ? 'ALERT_CONFIRMED' : 'ALERT_CONFIRMATION_ADDED', 'Anonymous Citizen', 'citizen', null, null, null, `Confirmation ${newConfirmations} of 2 added`);
+
     if (isConfirmed && !alert.dispatched) {
       const { data: responders } = await supabase
         .from('responders')
@@ -149,7 +156,6 @@ app.post('/api/alert/confirm', authenticateApiKey, async (req, res) => {
       }
     }
 
-    await logCustody(alertId, isConfirmed ? 'ALERT_CONFIRMED' : 'ALERT_CONFIRMATION_ADDED', 'Anonymous Citizen', 'citizen', null, null, null, `Confirmation ${newConfirmations} of 2 added`);
     res.json({
       success: true,
       confirmations: newConfirmations,
@@ -188,11 +194,11 @@ app.post('/api/responder/register', authenticateApiKey, async (req, res) => {
 
     const { error } = await supabase
       .from('responders')
-      .insert([{ 
-        name, 
-        type, 
-        zone, 
-        phone, 
+      .insert([{
+        name,
+        type,
+        zone,
+        phone,
         fcm_token: fcmToken,
         service_number: serviceNumber,
         verified: serviceNumber ? true : false
@@ -206,13 +212,61 @@ app.post('/api/responder/register', authenticateApiKey, async (req, res) => {
   }
 });
 
+app.post('/api/responder/login', authenticateApiKey, async (req, res) => {
+  try {
+    const { name, type, zone, phone, serviceNumber } = req.body;
+
+    if (!serviceNumber) {
+      return res.status(400).json({ error: 'Service number is required' });
+    }
+
+    const { data: responder } = await supabase
+      .from('responders')
+      .select('*')
+      .eq('service_number', serviceNumber)
+      .eq('type', type)
+      .single();
+
+    if (!responder) {
+      const { error: insertError } = await supabase
+        .from('responders')
+        .insert([{
+          name,
+          type,
+          zone,
+          phone,
+          service_number: serviceNumber,
+          verified: true
+        }]);
+
+      if (insertError) throw insertError;
+    }
+
+    const token = jwt.sign(
+      {
+        name: name,
+        type: type,
+        zone: zone,
+        serviceNumber: serviceNumber
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+
+    res.json({ success: true, token });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/alert/resolve', authenticateApiKey, async (req, res) => {
   try {
     const { alertId, responderName, responderType } = req.body;
 
     const { error } = await supabase
       .from('alerts')
-      .update({ 
+      .update({
         status: 'resolved',
         last_modified_at: new Date(),
         last_modified_by: `${responderName} (${responderType})`
@@ -223,6 +277,7 @@ app.post('/api/alert/resolve', authenticateApiKey, async (req, res) => {
     if (error) throw error;
 
     await logCustody(alertId, 'ALERT_RESOLVED', responderName, responderType, req.body.serviceNumber, null, null, 'Alert marked as resolved by responder');
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -235,7 +290,7 @@ app.post('/api/alert/false', authenticateApiKey, async (req, res) => {
 
     const { error } = await supabase
       .from('alerts')
-      .update({ 
+      .update({
         status: 'false_alert',
         last_modified_at: new Date(),
         last_modified_by: `${responderName} (${responderType})`
@@ -245,23 +300,8 @@ app.post('/api/alert/false', authenticateApiKey, async (req, res) => {
 
     if (error) throw error;
 
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-app.post('/api/alert/false', async (req, res) => {
-  try {
-    const { alertId } = req.body;
-
-    const { error } = await supabase
-      .from('alerts')
-      .update({ status: 'false_alert' })
-      .eq('id', alertId);
-
-    if (error) throw error;
-
     await logCustody(alertId, 'ALERT_FALSE', responderName, responderType, req.body.serviceNumber, null, null, 'Alert marked as false by responder');
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -301,6 +341,7 @@ app.post('/api/alert/backup', authenticateApiKey, async (req, res) => {
     }
 
     await logCustody(alertId, 'BACKUP_REQUESTED', responderName, responderType, req.body.serviceNumber, null, null, `Backup requested. ${responders ? responders.length : 0} responders notified.`);
+
     res.json({ success: true, notified: responders ? responders.length : 0 });
   } catch (error) {
     console.error(error);
