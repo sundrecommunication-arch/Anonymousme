@@ -32,6 +32,22 @@ const authenticateApiKey = (req, res, next) => {
 const deviceAlertCount = {};
 
 const rateLimit = (req, res, next) => {
+  const logCustody = async (alertId, action, performedBy, responderType, serviceNumber, state, lga, notes) => {
+  try {
+    await supabase.from('custody_log').insert([{
+      alert_id: alertId,
+      action: action,
+      performed_by: performedBy,
+      responder_type: responderType,
+      service_number: serviceNumber,
+      state: state,
+      lga: lga,
+      notes: notes
+    }]);
+  } catch (error) {
+    console.error('Custody log error:', error);
+  }
+};
   const deviceId = req.body.deviceId || req.ip;
   const now = Date.now();
 
@@ -71,6 +87,7 @@ app.post('/api/alert', authenticateApiKey, rateLimit, async (req, res) => {
 
     if (error) throw error;
 
+await logCustody(data[0].id, 'ALERT_CREATED', 'Anonymous Citizen', 'citizen', null, state, req.body.lga, 'Alert submitted by anonymous citizen');
     res.json({
       success: true,
       alertId: data[0].id,
@@ -130,6 +147,7 @@ app.post('/api/alert/confirm', authenticateApiKey, async (req, res) => {
       }
     }
 
+    await logCustody(alertId, isConfirmed ? 'ALERT_CONFIRMED' : 'ALERT_CONFIRMATION_ADDED', 'Anonymous Citizen', 'citizen', null, null, null, `Confirmation ${newConfirmations} of 2 added`);
     res.json({
       success: true,
       confirmations: newConfirmations,
@@ -202,6 +220,7 @@ app.post('/api/alert/resolve', authenticateApiKey, async (req, res) => {
 
     if (error) throw error;
 
+    await logCustody(alertId, 'ALERT_RESOLVED', responderName, responderType, req.body.serviceNumber, null, null, 'Alert marked as resolved by responder');
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -240,6 +259,7 @@ app.post('/api/alert/false', async (req, res) => {
 
     if (error) throw error;
 
+    await logCustody(alertId, 'ALERT_FALSE', responderName, responderType, req.body.serviceNumber, null, null, 'Alert marked as false by responder');
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -278,6 +298,7 @@ app.post('/api/alert/backup', authenticateApiKey, async (req, res) => {
       });
     }
 
+    await logCustody(alertId, 'BACKUP_REQUESTED', responderName, responderType, req.body.serviceNumber, null, null, `Backup requested. ${responders ? responders.length : 0} responders notified.`);
     res.json({ success: true, notified: responders ? responders.length : 0 });
   } catch (error) {
     console.error(error);
