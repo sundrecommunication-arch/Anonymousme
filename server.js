@@ -188,12 +188,17 @@ app.post('/api/responder/register', authenticateApiKey, async (req, res) => {
 
 app.post('/api/alert/resolve', authenticateApiKey, async (req, res) => {
   try {
-    const { alertId } = req.body;
+    const { alertId, responderName, responderType } = req.body;
 
     const { error } = await supabase
       .from('alerts')
-      .update({ status: 'resolved' })
-      .eq('id', alertId);
+      .update({ 
+        status: 'resolved',
+        last_modified_at: new Date(),
+        last_modified_by: `${responderName} (${responderType})`
+      })
+      .eq('id', alertId)
+      .eq('locked', true);
 
     if (error) throw error;
 
@@ -205,12 +210,17 @@ app.post('/api/alert/resolve', authenticateApiKey, async (req, res) => {
 
 app.post('/api/alert/false', authenticateApiKey, async (req, res) => {
   try {
-    const { alertId } = req.body;
+    const { alertId, responderName, responderType } = req.body;
 
     const { error } = await supabase
       .from('alerts')
-      .update({ status: 'false_alert' })
-      .eq('id', alertId);
+      .update({ 
+        status: 'false_alert',
+        last_modified_at: new Date(),
+        last_modified_by: `${responderName} (${responderType})`
+      })
+      .eq('id', alertId)
+      .eq('locked', true);
 
     if (error) throw error;
 
