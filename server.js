@@ -9,6 +9,23 @@ const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
+const logCustody = async (alertId, action, performedBy, responderType, serviceNumber, state, lga, notes) => {
+  try {
+    await supabase.from('custody_log').insert([{
+      alert_id: alertId,
+      action: action,
+      performed_by: performedBy,
+      responder_type: responderType,
+      service_number: serviceNumber,
+      state: state,
+      lga: lga,
+      notes: notes
+    }]);
+  } catch (error) {
+    console.error('Custody log error:', error);
+  }
+};
+
 const app = express();
 app.use(cors({
   origin: [
@@ -32,22 +49,7 @@ const authenticateApiKey = (req, res, next) => {
 const deviceAlertCount = {};
 
 const rateLimit = (req, res, next) => {
-  const logCustody = async (alertId, action, performedBy, responderType, serviceNumber, state, lga, notes) => {
-  try {
-    await supabase.from('custody_log').insert([{
-      alert_id: alertId,
-      action: action,
-      performed_by: performedBy,
-      responder_type: responderType,
-      service_number: serviceNumber,
-      state: state,
-      lga: lga,
-      notes: notes
-    }]);
-  } catch (error) {
-    console.error('Custody log error:', error);
-  }
-};
+  
   const deviceId = req.body.deviceId || req.ip;
   const now = Date.now();
 
